@@ -1,0 +1,14 @@
+[tool.poetry]
+name = "dephy_pi"
+version = "0.1.0"
+description = "Writes Dephy's Raspberry Pi image to an SD card."
+authors = ["Jared <jcoughlin@dephy.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+
+[tool.poetry.dev-dependencies]
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
