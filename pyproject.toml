@@ -6,8 +6,14 @@ authors = ["Jared <jcoughlin@dephy.com>"]
 
 [tool.poetry.dependencies]
 python = "^3.8"
+cleo = "^0.8.1"
+boto3 = "^1.21.15"
+ipython = "^8.1.1"
 
 [tool.poetry.dev-dependencies]
+
+[tool.poetry.scripts]
+dephy_pi="dephy_pi.core.main:main"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
