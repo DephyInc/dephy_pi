@@ -1,0 +1,10 @@
+# See: https://www.atlassian.com/git/tutorials/saving-changes/gitignore
+
+# Compiled python modules (leading slash anchors the path to root)
+/*.pyc
+
+# Cache
+__pycache__/
+
+# Egg
+*.egg-info/
