@@ -1,8 +1,11 @@
+import os
 import subprocess as sub
 import sys
 
 from cleo import Command
 
+from dephy_pi.utilities.disk_utils import get_disk_mount_point
+from dephy_pi.utilities.disk_utils import get_disk_partitions
 from dephy_pi.utilities.disk_utils import get_removable_drives
 from dephy_pi.utilities.network_utils import s3_download
 
@@ -63,7 +66,7 @@ class CreateCommand(Command):
         else:
             msg = "Multiple removable drives found. Please select the "
             msg += "one with the sd card to flash:"
-            self.sdDrive = self.choice(msg, removables)
+            self.sdDrive = self.choice(msg, removableDrives)
 
     # -----
     # _unmount_partitions
@@ -84,7 +87,8 @@ class CreateCommand(Command):
             "dd",
             f"if={self.localFile}",
             f"of={self.sdDrive.device_node}",
-            "bs=32M", "conv=fsync"
+            "bs=32M",
+            "conv=fsync",
         ]
         process = sub.Popen(cmd, stdout=sub.PIPE, text=True)
         while True:
@@ -130,10 +134,7 @@ class CreateCommand(Command):
 
         # Encrypt the password before writing it to the conf file
         process = sub.Popen(
-            ["wpa_passphrase", ssid, psk],
-            stdout=sub.PIPE,
-            stderr=sub.STDOUT,
-            text=True
+            ["wpa_passphrase", ssid, psk], stdout=sub.PIPE, stderr=sub.STDOUT, text=True
         )
         process.wait()
         del psk
@@ -143,10 +144,12 @@ class CreateCommand(Command):
         assert output.startswith("network=")
 
         # Get path to conf file
-        wpaSupplicant = os.path.join(self.rootfsMountPoint, "/etc/wpa_supplicant/wpa_supplicant.conf")
+        wpaSupplicant = os.path.join(
+            self.rootfsMountPoint, "/etc/wpa_supplicant/wpa_supplicant.conf"
+        )
 
         # Write network details to file
-        process = sub.Popen(["sudo", "echo", output, ">>", wpaSupplicant]) 
+        process = sub.Popen(["sudo", "echo", output, ">>", wpaSupplicant])
         process.wait()
 
     # -----
@@ -156,10 +159,18 @@ class CreateCommand(Command):
         # https://tinyurl.com/mr424544
         hostname = self.ask("Enter a hostname for your pi: ")
         hostFile = os.path.join(self.rootfsMountPoint, "/etc/hostname")
-        process = sub.Popen(["sudo", "echo", hostname, ">", hostFile]) 
+        process = sub.Popen(["sudo", "echo", hostname, ">", hostFile])
         process.wait()
         hostFile = os.path.join(self.rootfsMountPoint, "/etc/hosts")
-        process = sub.Popen(["sudo", "sed", "-i", f"'s/\(127\.0\.0\.1\s*\)localhost/\1{hostname}/'", hostFile])
+        process = sub.Popen(
+            [
+                "sudo",
+                "sed",
+                "-i",
+                r"'s/\(127\.0\.0\.1\s*\)localhost/\1"+f"{hostname}/'",
+                hostFile,
+            ]
+        )
         process.wait()
 
     # -----

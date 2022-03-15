@@ -40,10 +40,10 @@ def _get_removable_drives_linux():
     """
     context = pyudev.Context()
     removables = []
-    devices = context.list_devices(subsystem='block', DEVTYPE='disk')
+    devices = context.list_devices(subsystem="block", DEVTYPE="disk")
 
     for dev in devices:
-        if dev.attributes.asstring('removable') == "1":
+        if dev.attributes.asstring("removable") == "1":
             removables.append(dev)
 
     return removables
@@ -60,7 +60,7 @@ def get_disk_partitions(disk):
 
     Parameters
     ----------
-    disk : pyudev.device._device.Device 
+    disk : pyudev.device._device.Device
         The disk for which we want the partitions.
 
     Returns
@@ -70,7 +70,7 @@ def get_disk_partitions(disk):
         device type of "partition".
     """
     if platform.system() == "Linux":
-        return _get_disk_paritions_linux(disk)
+        return _get_disk_partitions_linux(disk)
     else:
         raise OSError("Only Linux is supported, currently!")
 
@@ -84,7 +84,7 @@ def _get_disk_partitions_linux(disk):
 
     Parameters
     ----------
-    disk : pyudev.device._device.Device 
+    disk : pyudev.device._device.Device
         The disk for which we want the partitions.
 
     Returns
@@ -97,9 +97,7 @@ def _get_disk_partitions_linux(disk):
     context = pyudev.Context()
 
     partitions = context.list_devices(
-        subsystem="block",
-        DEVTYPE="partition",
-        parent=disk
+        subsystem="block", DEVTYPE="partition", parent=disk
     )
 
     for pt in partitions:
@@ -119,7 +117,7 @@ def get_disk_mount_point(disk):
 
     Parameters
     ----------
-    disk : str 
+    disk : str
         The name of the disk for which we want the mount point.
 
     Returns
@@ -143,7 +141,7 @@ def _get_disk_mount_point_linux(disk):
 
     Parameters
     ----------
-    disk : str 
+    disk : str
         The name of the disk for which we want the mount point.
 
     Returns
