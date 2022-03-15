@@ -11,6 +11,9 @@ boto3 = "^1.21.15"
 ipython = "^8.1.1"
 
 [tool.poetry.dev-dependencies]
+black = "^22.1.0"
+nox = "^2022.1.7"
+flake8 = "^4.0.1"
 
 [tool.poetry.scripts]
 dephy_pi="dephy_pi.core.main:main"
