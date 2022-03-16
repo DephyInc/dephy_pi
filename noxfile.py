@@ -16,5 +16,5 @@ def lint(session):
 # ============================================
 @nox.session(python=["3.8", "3.9"])
 def test(session):
-    session.install("pytest")
-    session.run("pytest", "-sv", "tests/")
+    session.install("pytest", "pycairo", "PyGObject", "pyudev")
+    session.run("umockdev-run", "--", "pytest", "-sv", "tests/")
