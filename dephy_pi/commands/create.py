@@ -1,6 +1,7 @@
 import os
 import subprocess as sub
 import sys
+import tempfile
 
 from cleo import Command
 
@@ -18,7 +19,6 @@ class CreateCommand(Command):
     Sets up an SD card with Dephy's raspberry pi image.
 
     create
-        {--u|use-local : Use an already downloaded version of image.}
     """
 
     # -----
@@ -28,10 +28,10 @@ class CreateCommand(Command):
         super().__init__()
         self.bucketName = None
         self.remoteFile = None
-        self.localFile = "dephy_pi.iso"
+        self.localFile = None
         self.sdDrive = None
         self.partitions = None
-        self.rootfsMountPoint = os.path.abspath(os.getcwd())
+        self.rootfs = None
 
     # -----
     # handle
@@ -39,18 +39,16 @@ class CreateCommand(Command):
     def handle(self):
         import pdb; pdb.set_trace()
         # Download iso file
-        if not self.option("use-local"):
-            s3_download(self.bucketName, self.remoteFile, self.localFile)
-        else:
-            self.localFile = "mypi.iso"
+        #s3_download(self.bucketName, self.remoteFile, self.localFile)
+        self.localFile = "mypi.iso"
         # Find correct drive
         self._get_sd_drive()
         # Make sure the sd card partitions are unmounted
         self._unmount_partitions()
         # Flash sd card
-        self._flash()
+        # self._flash()
         # Mount rootfs partition
-        self._mount_rootfs()
+        self._get_rootfs()
         # Edit wifi config (edit wpa_supplicant.conf file)
         self._setup_wifi()
         # Edit ssh config (hostname)
@@ -89,6 +87,7 @@ class CreateCommand(Command):
     # -----
     def _flash(self):
         cmd = [
+            "sudo",
             "dd",
             f"if={self.localFile}",
             f"of={self.sdDrive.device_node}",
@@ -102,37 +101,24 @@ class CreateCommand(Command):
                 break
 
     # -----
-    # _mount_rootfs
+    # _get_rootfs
     # -----
-    def _mount_rootfs(self):
-        rootfs = None
-
-        # Select rootfs partition
-        for partition in self.partitions:
-            if "rootfs" in partition.device_node:
-                rootfs = partition
-                break
-
-        if not rootfs:
-            self.line("Couldn't find rootfs!")
-            sys.exit(1)
-
-        # Create mount point (requires sudo)
-        process = sub.Popen(["mkdir", self.rootfsMountPoint])
-        process.wait()
-        process = sub.Popen(["sudo", "mount", rootfs, self.rootfsMountPoint])
-        process.wait()
+    def _get_rootfs(self):
+        with tempfile.TemporaryDirectory() as mountPoint:
+            for partition in self.partitions:
+                process = sub.Popen(["sudo", "mount", partition, mountPoint])
+                process.wait()
+                content = os.listdir(mountPoint)
+                process = sub.Popen(["sudo", "umount", partition])
+                process.wait()
+                if "rootfs" in content:
+                    self.rootfs = partition
+                    break
 
     # -----
     # _setup_wifi
     # -----
     def _setup_wifi(self):
-        # TODO: wpa_passphrase creates the entry for the wpa_supplicant.conf file,
-        # but it includes the unencrypted psk as a commented-out line in that entry.
-        # I'm assuming that line doesn't need to be present in order for the pi
-        # to connect to the network? Otherwise, what was the point of encrypting it?
-        # I've left it in for now, but it should be parsed out
-
         # Get network details
         ssid = self.ask("Enter the WiFi network to connect your Pi to: ")
         psk = self.secret("Enter the network's password: ")
@@ -149,34 +135,78 @@ class CreateCommand(Command):
         assert output.startswith("network=")
 
         # Get path to conf file
-        wpaSupplicant = os.path.join(
-            self.rootfsMountPoint, "/etc/wpa_supplicant/wpa_supplicant.conf"
-        )
+        with tempfile.TemporaryDirectory() as mountPoint:
+            process = sub.Popen(["sudo", "mount", self.rootfs, mountPoint])
+            process.wait()
 
-        # Write network details to file
-        process = sub.Popen(["sudo", "echo", output, ">>", wpaSupplicant])
-        process.wait()
+            # For some reason the conf file cannot be written to directly,
+            # even with sudo (even from the command-line), so here we copy
+            # the file, append the new data to the copy, and then overwrite
+            # the original with the copy
+            wpaSupplicant = os.path.join(
+                mountPoint, "etc", "wpa_supplicant", "wpa_supplicant.conf"
+            )
+            with open(wpaSupplicant, "r") as fd:
+                originalData = fd.read()
+
+            with open("wpa_supplicant.conf", "w") as fd:
+                fd.write(originalData + "\n")
+                fd.write(output)
+
+            process = sub.Popen(["sudo", "mv", "wpa_supplicant.conf", wpaSupplicant])
+            process.wait()
+
+            process = sub.Popen(["sudo", "umount", self.rootfs])
+            process.wait()
 
     # -----
     # _setup_hostname
     # -----
     def _setup_hostname(self):
         # https://tinyurl.com/mr424544
-        hostname = self.ask("Enter a hostname for your pi: ")
-        hostFile = os.path.join(self.rootfsMountPoint, "/etc/hostname")
-        process = sub.Popen(["sudo", "echo", hostname, ">", hostFile])
-        process.wait()
-        hostFile = os.path.join(self.rootfsMountPoint, "/etc/hosts")
-        process = sub.Popen(
-            [
-                "sudo",
-                "sed",
-                "-i",
-                r"'s/\(127\.0\.0\.1\s*\)localhost/\1"+f"{hostname}/'",
-                hostFile,
-            ]
-        )
-        process.wait()
+        with tempfile.TemporaryDirectory() as mountPoint:
+            process = sub.Popen(["sudo", "mount", self.rootfs, mountPoint])
+            process.wait()
+
+            hostname = self.ask("Enter a hostname for your pi: ")
+            hostFile = os.path.join(mountPoint, "etc", "hostname")
+            # For some reason the conf file cannot be written to directly,
+            # even with sudo (even from the command-line), so here we copy
+            # the file, append the new data to the copy, and then overwrite
+            # the original with the copy
+            with open(hostFile, "r") as fd:
+                originalData = fd.read()
+
+            with open("hostname", "w") as fd:
+                fd.write(originalData + "\n")
+                fd.write(hostname)
+
+            process = sub.Popen(["sudo", "mv", "hostname", hostFile])
+            process.wait()
+
+            hostFile = os.path.join(mountPoint, "etc", "hosts")
+            with open(hostFile, "r") as fd:
+                originalData = fd.read()
+
+            with open("hosts", "w") as fd:
+                fd.write(originalData)
+
+            process = sub.Popen(
+                [
+                    "sudo",
+                    "sed",
+                    "-i",
+                    r"s/\(127\.0\.0\.1\s*\)localhost/\1"+f"{hostname}/",
+                    "hosts",
+                ]
+            )
+            process.wait()
+
+            process = sub.Popen(["sudo", "mv", "hosts", hostFile])
+            process.wait()
+            
+            process = sub.Popen(["sudo", "umount", self.rootfs])
+            process.wait()
 
     # -----
     # _clean_up
