@@ -18,6 +18,7 @@ class CreateCommand(Command):
     Sets up an SD card with Dephy's raspberry pi image.
 
     create
+        {--u|use-local : Use an already downloaded version of image.}
     """
 
     # -----
@@ -30,14 +31,18 @@ class CreateCommand(Command):
         self.localFile = "dephy_pi.iso"
         self.sdDrive = None
         self.partitions = None
-        self.rootfsMountPoint = os.abspath(os.getcwd())
+        self.rootfsMountPoint = os.path.abspath(os.getcwd())
 
     # -----
     # handle
     # -----
     def handle(self):
+        import pdb; pdb.set_trace()
         # Download iso file
-        s3_download(self.bucketName, self.remoteFile, self.localFile)
+        if not self.option("use-local"):
+            s3_download(self.bucketName, self.remoteFile, self.localFile)
+        else:
+            self.localFile = "mypi.iso"
         # Find correct drive
         self._get_sd_drive()
         # Make sure the sd card partitions are unmounted
@@ -74,7 +79,7 @@ class CreateCommand(Command):
     def _unmount_partitions(self):
         self.partitions = get_disk_partitions(self.sdDrive)
         for partition in self.partitions:
-            mountPoint = get_disk_mount_point(partition.device_node)
+            mountPoint = get_disk_mount_point(partition)
             if mountPoint:
                 process = sub.Popen(["umount", mountPoint])
                 process.wait()

@@ -9,6 +9,8 @@ python = "^3.8"
 cleo = "^0.8.1"
 boto3 = "^1.21.15"
 ipython = "^8.1.1"
+psutil = "^5.9.0"
+pyudev = "^0.23.2"
 
 [tool.poetry.dev-dependencies]
 black = "^22.1.0"
