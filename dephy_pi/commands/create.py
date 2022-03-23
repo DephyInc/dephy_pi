@@ -26,8 +26,8 @@ class CreateCommand(Command):
     # -----
     def __init__(self):
         super().__init__()
-        self.bucketName = None
-        self.remoteFile = None
+        self.bucketName = "dephy-public-binaries"
+        self.remoteFile = "mypi.iso"
         self.localFile = None
         self.sdDrive = None
         self.partitions = None
@@ -38,23 +38,24 @@ class CreateCommand(Command):
     # -----
     def handle(self):
         import pdb; pdb.set_trace()
-        # Download iso file
-        #s3_download(self.bucketName, self.remoteFile, self.localFile)
-        self.localFile = "mypi.iso"
         # Find correct drive
         self._get_sd_drive()
         # Make sure the sd card partitions are unmounted
         self._unmount_partitions()
-        # Flash sd card
-        # self._flash()
-        # Mount rootfs partition
+        # Get rootfs partition
         self._get_rootfs()
+        # with tempfile.TemporaryFile() as self.localFile:
+            # Download iso file
+            #s3_download(self.bucketName, self.remoteFile, self.localFile)
+            # Flash sd card
+            # self._flash()
         # Edit wifi config (edit wpa_supplicant.conf file)
         self._setup_wifi()
-        # Edit ssh config (hostname)
+        # Edit hostname
         self._setup_hostname()
-        # Delete image from user's hdd, unmount, and eject usb
-        self._clean_up()
+        # Eject usb
+        process = sub.Popen(["sudo", "eject", self.sdDrive])
+        process.wait()
 
     # -----
     # _get_sd_drive
@@ -111,7 +112,7 @@ class CreateCommand(Command):
                 content = os.listdir(mountPoint)
                 process = sub.Popen(["sudo", "umount", partition])
                 process.wait()
-                if "rootfs" in content:
+                if "root" in content:
                     self.rootfs = partition
                     break
 
@@ -134,27 +135,22 @@ class CreateCommand(Command):
         output = process.communicate()[0]
         assert output.startswith("network=")
 
-        # Get path to conf file
+        # Mount the rootfs
         with tempfile.TemporaryDirectory() as mountPoint:
             process = sub.Popen(["sudo", "mount", self.rootfs, mountPoint])
             process.wait()
 
-            # For some reason the conf file cannot be written to directly,
-            # even with sudo (even from the command-line), so here we copy
-            # the file, append the new data to the copy, and then overwrite
-            # the original with the copy
             wpaSupplicant = os.path.join(
                 mountPoint, "etc", "wpa_supplicant", "wpa_supplicant.conf"
             )
-            with open(wpaSupplicant, "r") as fd:
-                originalData = fd.read()
 
-            with open("wpa_supplicant.conf", "w") as fd:
-                fd.write(originalData + "\n")
-                fd.write(output)
-
-            process = sub.Popen(["sudo", "mv", "wpa_supplicant.conf", wpaSupplicant])
+            # Change permissions to allow modifying the supplicant file
+            process = sub.Popen(["sudo", "chmod", "a=rw", wpaSupplicant])
             process.wait()
+
+            # Write the new data
+            with open(wpaSupplicant, "a") as fd:
+                fd.write(output)
 
             process = sub.Popen(["sudo", "umount", self.rootfs])
             process.wait()
@@ -164,32 +160,26 @@ class CreateCommand(Command):
     # -----
     def _setup_hostname(self):
         # https://tinyurl.com/mr424544
+        hostname = self.ask("Enter a hostname for your pi: ")
+
         with tempfile.TemporaryDirectory() as mountPoint:
             process = sub.Popen(["sudo", "mount", self.rootfs, mountPoint])
             process.wait()
 
-            hostname = self.ask("Enter a hostname for your pi: ")
             hostFile = os.path.join(mountPoint, "etc", "hostname")
-            # For some reason the conf file cannot be written to directly,
-            # even with sudo (even from the command-line), so here we copy
-            # the file, append the new data to the copy, and then overwrite
-            # the original with the copy
-            with open(hostFile, "r") as fd:
-                originalData = fd.read()
 
-            with open("hostname", "w") as fd:
-                fd.write(originalData + "\n")
-                fd.write(hostname)
-
-            process = sub.Popen(["sudo", "mv", "hostname", hostFile])
+            # Change permissions to allow modifying the file
+            process = sub.Popen(["sudo", "chmod", "a=rw", hostFile])
             process.wait()
 
-            hostFile = os.path.join(mountPoint, "etc", "hosts")
-            with open(hostFile, "r") as fd:
-                originalData = fd.read()
+            # Write the new hostname
+            with open(hostFile, "a") as fd:
+                fd.write(hostname)
 
-            with open("hosts", "w") as fd:
-                fd.write(originalData)
+            # Modify the hosts file, too
+            hostFile = os.path.join(mountPoint, "etc", "hosts")
+            process = sub.Popen(["sudo", "chmod", "a=rw", hostFile])
+            process.wait()
 
             process = sub.Popen(
                 [
@@ -197,22 +187,10 @@ class CreateCommand(Command):
                     "sed",
                     "-i",
                     r"s/\(127\.0\.0\.1\s*\)localhost/\1"+f"{hostname}/",
-                    "hosts",
+                    hostFile,
                 ]
             )
             process.wait()
 
-            process = sub.Popen(["sudo", "mv", "hosts", hostFile])
-            process.wait()
-            
             process = sub.Popen(["sudo", "umount", self.rootfs])
             process.wait()
-
-    # -----
-    # _clean_up
-    # -----
-    def _clean_up(self):
-        process = sub.Popen(["rm", self.localFile])
-        process.wait()
-        process = sub.Popen(["sudo", "eject", self.sdDrive])
-        process.wait()
