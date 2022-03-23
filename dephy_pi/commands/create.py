@@ -37,18 +37,17 @@ class CreateCommand(Command):
     # handle
     # -----
     def handle(self):
-        import pdb; pdb.set_trace()
         # Find correct drive
         self._get_sd_drive()
         # Make sure the sd card partitions are unmounted
         self._unmount_partitions()
         # Get rootfs partition
         self._get_rootfs()
-        # with tempfile.TemporaryFile() as self.localFile:
+        with tempfile.NamedTemporaryFile() as self.localFile:
             # Download iso file
-            #s3_download(self.bucketName, self.remoteFile, self.localFile)
+            s3_download(self.bucketName, self.remoteFile, self.localFile.name)
             # Flash sd card
-            # self._flash()
+            self._flash()
         # Edit wifi config (edit wpa_supplicant.conf file)
         self._setup_wifi()
         # Edit hostname
@@ -90,7 +89,7 @@ class CreateCommand(Command):
         cmd = [
             "sudo",
             "dd",
-            f"if={self.localFile}",
+            f"if={self.localFile.name}",
             f"of={self.sdDrive.device_node}",
             "bs=32M",
             "conv=fsync",
