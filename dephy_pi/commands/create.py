@@ -8,7 +8,7 @@ from cleo import Command
 from dephy_pi.utilities.disk_utils import get_disk_mount_point
 from dephy_pi.utilities.disk_utils import get_disk_partitions
 from dephy_pi.utilities.disk_utils import get_removable_drives
-from dephy_pi.utilities.network_utils import s3_download
+from dephy_pi.utilities.network_utils import get_aws_resource
 
 
 # ============================================
@@ -32,22 +32,42 @@ class CreateCommand(Command):
         self.sdDrive = None
         self.partitions = None
         self.rootfs = None
+        self.progBar = None
+        self.s3 = None
 
     # -----
     # handle
     # -----
     def handle(self):
         # Find correct drive
+        self.write("<c2>Finding SD card...</c2>")
         self._get_sd_drive()
+        self.overwrite(f"<c2>SD found: </c2><info>{self.sdDrive.device_node}</info>")
         # Make sure the sd card partitions are unmounted
+        self.write("<c2>Unmounting partitions...</c2>")
         self._unmount_partitions()
-        # Get rootfs partition
-        self._get_rootfs()
+        self.overwrite("<c2>Unmounting partitions: </c2><info>Done</info>")
         with tempfile.NamedTemporaryFile() as self.localFile:
             # Download iso file
-            s3_download(self.bucketName, self.remoteFile, self.localFile.name)
+            import pdb; pdb.set_trace()
+            self._setup_progress_bar("download")
+            self.progBar.start()
+            self.progBar.set_message("Downloading ISO...")
+            self.s3.Bucket(self.bucketName).download_file(
+                self.remoteFile,
+                self.localFile.name,
+                Callback=callback
+            )
+            self.progBar.set_message("Download complete!")
+            self.progBar.finish()
             # Flash sd card
+            self._setup_progress_bar("flash")
+            self.progBar.start()
             self._flash()
+            self.progBar.set_message("Done flashing!")
+            self.progBar.finish()
+        # Get rootfs partition
+        self._get_rootfs()
         # Edit wifi config (edit wpa_supplicant.conf file)
         self._setup_wifi()
         # Edit hostname
@@ -97,6 +117,7 @@ class CreateCommand(Command):
         process = sub.Popen(cmd, stdout=sub.PIPE, text=True)
         while True:
             result = process.poll()
+            self.progBar.advance()
             if result is not None:
                 break
 
@@ -193,3 +214,25 @@ class CreateCommand(Command):
 
             process = sub.Popen(["sudo", "umount", self.rootfs])
             process.wait()
+
+    # -----
+    # _setup_progress_bar
+    # -----
+    def _setup_progress_bar(self, barType):
+        if barType == "download":
+            self.s3 = get_aws_resource("s3")
+            fileSize = s3.Bucket(self.bucketName).Object(self.remoteFile).content_length
+            self.progBar = self.progress_bar(fileSize)
+            self.progBar.set_format("[%bar%] %percent:3s%")
+            self.progBar.set_message("Starting download...")
+        elif barType == "flash":
+            self.progBar = self.progress_bar()
+            self.progBar.set_format("[%bar%] %elapsed%")
+            self.progBar.set_message("Flashing...")
+
+
+    # -----
+    # _download_progress
+    # -----
+    def _download_progress(self, chunk):
+        self.progBar.advance(chunk)
