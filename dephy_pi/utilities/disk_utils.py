@@ -72,7 +72,7 @@ def get_disk_partitions(disk):
     if platform.system() == "Linux":
         return _get_disk_partitions_linux(disk)
     else:
-        raise OSError 
+        raise OSError
 
 
 # ============================================

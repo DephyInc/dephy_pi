@@ -1,4 +1,3 @@
-from functools import wraps
 import os
 import subprocess as sub
 import sys
@@ -65,7 +64,9 @@ class CreateCommand(Command):
             self.line("\t- <error>Error</error>: `dephy_pi` only runs on Linux.")
             sys.exit(1)
         if len(removableDrives) == 0:
-            msg = "\t- <error>Error</error>: Unable to find a valid SD card for flashing."
+            msg = (
+                "\t- <error>Error</error>: Unable to find a valid SD card for flashing."
+            )
             self.line(msg)
             sys.exit(1)
         elif len(removableDrives) == 1:
@@ -76,7 +77,8 @@ class CreateCommand(Command):
             removableDrives.append("None of the above.")
             self.sdDrive = self.choice(msg, removableDrives)
             if self.sdDrive == "None of the above.":
-                msg = "\t- <error>Error</error>: Unable to find a valid SD card for flashing."
+                msg = "\t- <error>Error</error>: Unable to find a valid SD card for "
+                msg += "flashing."
                 self.line(msg)
         msg = f"\t- <warning>Found sd card at: </warning>{self.sdDrive.device_node}"
         self.line(msg)
@@ -127,9 +129,7 @@ class CreateCommand(Command):
             progBar.advance(chunk)
 
         s3.Bucket(self.bucketName).download_file(
-            self.remoteFile,
-            localFile.name,
-            Callback=_download_progress
+            self.remoteFile, localFile.name, Callback=_download_progress
         )
         progBar.set_message("<c2>Download complete!</c2>")
         progBar.finish()
@@ -239,7 +239,7 @@ class CreateCommand(Command):
                 "sudo",
                 "sed",
                 "-i",
-                r"s/\(127\.0\.0\.1\s*\)localhost/\1"+f"{hostname}/",
+                r"s/\(127\.0\.0\.1\s*\)localhost/\1" + f"{hostname}/",
                 hostFile,
             ]
         )

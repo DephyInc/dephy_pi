@@ -7,8 +7,9 @@ import nox
 @nox.session
 def lint(session):
     session.install("black", "flake8")
-    session.run("black", ".")
-    session.run("flake8", "--max-line-length", "88", ".")
+    session.run("black", "./dephy_pi")
+    session.run("black", "./tests")
+    session.run("flake8", "--max-line-length", "88", "./dephy_pi")
 
 
 # ============================================
