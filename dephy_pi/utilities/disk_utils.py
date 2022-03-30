@@ -23,7 +23,7 @@ def get_removable_drives():
     if platform.system() == "Linux":
         return _get_removable_drives_linux()
     else:
-        raise OSError("Only Linux is supported, currently!")
+        raise OSError
 
 
 # ============================================
@@ -72,7 +72,7 @@ def get_disk_partitions(disk):
     if platform.system() == "Linux":
         return _get_disk_partitions_linux(disk)
     else:
-        raise OSError("Only Linux is supported, currently!")
+        raise OSError 
 
 
 # ============================================
