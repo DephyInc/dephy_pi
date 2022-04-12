@@ -222,7 +222,7 @@ class CreateCommand(Command):
 
         # For some reason the output of wpa_passphrase includes the original
         # password, but commented out, so we remove it
-        output = re.sub(r'\n\t#psk=".*"', '', output)
+        output = re.sub(r'\n\t#psk=".*"', "", output)
 
         wpaSupplicant = os.path.join(
             mountPoint, "etc", "wpa_supplicant", "wpa_supplicant.conf"
@@ -284,10 +284,16 @@ class CreateCommand(Command):
         attempts = 0
 
         while attempts < 3:
-            passwd = crypt.crypt(self.secret("Enter a new root password: "), salt=crypt.mksalt(crypt.METHOD_SHA512))
-            passwd2 = crypt.crypt(self.secret("Re-enter password: "), salt=crypt.mksalt(crypt.METHOD_SHA512))
+            passwd = crypt.crypt(
+                self.secret("Enter a new root password: "),
+                salt=crypt.mksalt(crypt.METHOD_SHA512),
+            )
+            passwd2 = crypt.crypt(
+                self.secret("Re-enter password: "),
+                salt=crypt.mksalt(crypt.METHOD_SHA512),
+            )
             if hmac.compare_digest(passwd, passwd2):
-                break;
+                break
             attempts += 1
             self.line("- \t<error>Passwords do not match!<error>")
             self.line(f"- \t<warning>{3-attempts} attempts remaining.<warning>")
