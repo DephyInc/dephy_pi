@@ -1,4 +1,7 @@
+import crypt
+import hmac
 import os
+import re
 import subprocess as sub
 import sys
 import tempfile
@@ -31,6 +34,7 @@ class CreateCommand(Command):
         self.sdDrive = None
         self.partitions = None
         self.rootfs = None
+        self.bootfs = None
 
     # -----
     # handle
@@ -41,12 +45,24 @@ class CreateCommand(Command):
         with tempfile.NamedTemporaryFile() as localFile:
             self._download_iso(localFile)
             self._flash(localFile)
-        self._get_rootfs()
+        self.rootfs = self._get_partition("root")
+        self.bootfs = self._get_partition("cmdline.txt")
         with tempfile.TemporaryDirectory() as mountPoint:
             process = sub.Popen(["sudo", "mount", self.rootfs, mountPoint])
             process.wait()
             self._setup_wifi(mountPoint)
             self._setup_hostname(mountPoint)
+            try:
+                self._change_root_password(mountPoint)
+            except ValueError:
+                process = sub.Popen(["sudo", "umount", self.rootfs])
+                process.wait()
+                sys.exit(1)
+            process = sub.Popen(["sudo", "umount", self.rootfs])
+            process.wait()
+            process = sub.Popen(["sudo", "mount", self.bootfs, mountPoint])
+            process.wait()
+            self._setup_ssh(mountPoint)
             process = sub.Popen(["sudo", "umount", self.rootfs])
             process.wait()
         process = sub.Popen(["sudo", "eject", self.sdDrive.device_node])
@@ -170,9 +186,10 @@ class CreateCommand(Command):
         self.line("")
 
     # -----
-    # _get_rootfs
+    # _get_partition
     # -----
-    def _get_rootfs(self):
+    def _get_partition(self, key):
+        desiredPartition = None
         with tempfile.TemporaryDirectory() as mountPoint:
             for partition in self.partitions:
                 process = sub.Popen(["sudo", "mount", partition, mountPoint])
@@ -180,9 +197,10 @@ class CreateCommand(Command):
                 content = os.listdir(mountPoint)
                 process = sub.Popen(["sudo", "umount", partition])
                 process.wait()
-                if "root" in content:
-                    self.rootfs = partition
+                if key in content:
+                    desiredPartition = partition
                     break
+        return desiredPartition
 
     # -----
     # _setup_wifi
@@ -201,6 +219,10 @@ class CreateCommand(Command):
         # Parse the output, which includes both stdout and stderr as a tuple
         output = process.communicate()[0]
         assert output.startswith("network=")
+
+        # For some reason the output of wpa_passphrase includes the original
+        # password, but commented out, so we remove it
+        output = re.sub(r'\n\t#psk=".*"', '', output)
 
         wpaSupplicant = os.path.join(
             mountPoint, "etc", "wpa_supplicant", "wpa_supplicant.conf"
@@ -239,8 +261,49 @@ class CreateCommand(Command):
                 "sudo",
                 "sed",
                 "-i",
-                r"s/\(127\.0\.0\.1\s*\)localhost/\1" + f"{hostname}/",
+                r"'s/\(127\.0\.0\.1\s*\)localhost/\1" + f"{hostname}/'",
                 hostFile,
+            ]
+        )
+        process.wait()
+
+    # -----
+    # _setup_ssh
+    # -----
+    def _setup_ssh(self, mountPoint):
+        # https://tinyurl.com/2p8u54av
+        sshFile = os.path.join(mountPoint, "boot", "ssh")
+        process = sub.Popen(["sudo", "touch", sshFile])
+        process.wait()
+
+    # -----
+    # _change_root_password
+    # -----
+    def _change_root_password(self, mountPoint):
+        # https://murray.systems/blog/raspberry_pi/setup/
+        attempts = 0
+
+        while attempts < 3:
+            passwd = crypt.crypt(self.secret("Enter a new root password: "), salt=crypt.mksalt(crypt.METHOD_SHA512))
+            passwd2 = crypt.crypt(self.secret("Re-enter password: "), salt=crypt.mksalt(crypt.METHOD_SHA512))
+            if hmac.compare_digest(passwd, passwd2):
+                break;
+            attempts += 1
+            self.line("- \t<error>Passwords do not match!<error>")
+            self.line(f"- \t<warning>{3-attempts} attempts remaining.<warning>")
+            if attempts == 3:
+                self.line("-t \t<error>Error<error>: max attempts reached!")
+                raise ValueError
+
+        shadowFile = os.path.join(mountPoint, "etc", "shadow")
+
+        process = sub.Popen(
+            [
+                "sudo",
+                "sed",
+                "-i",
+                r"'s/^pi:\*/pi:" + f"{passwd}/'",
+                shadowFile,
             ]
         )
         process.wait()
