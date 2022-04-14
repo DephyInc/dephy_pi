@@ -30,7 +30,7 @@ class CreateCommand(Command):
     def __init__(self):
         super().__init__()
         self.bucketName = "dephy-public-binaries"
-        self.remoteFile = "mypi.iso"
+        self.remoteFile = "dephy_pi.iso"
         self.sdDrive = None
         self.partitions = None
         self.rootfs = None
@@ -63,7 +63,7 @@ class CreateCommand(Command):
             process = sub.Popen(["sudo", "mount", self.bootfs, mountPoint])
             process.wait()
             self._setup_ssh(mountPoint)
-            process = sub.Popen(["sudo", "umount", self.rootfs])
+            process = sub.Popen(["sudo", "umount", self.bootfs])
             process.wait()
         process = sub.Popen(["sudo", "eject", self.sdDrive.device_node])
         process.wait()
@@ -161,8 +161,7 @@ class CreateCommand(Command):
         cmd = [
             "sudo",
             "dd",
-            # f"if={localFile.name}",
-            "if=mypi.iso",
+            f"if={localFile.name}",
             f"of={self.sdDrive.device_node}",
             "bs=32M",
             "conv=fsync",
@@ -249,7 +248,7 @@ class CreateCommand(Command):
         process.wait()
 
         # Write the new hostname
-        with open(hostFile, "a") as fd:
+        with open(hostFile, "w") as fd:
             fd.write(hostname)
 
         # Modify the hosts file, too
@@ -261,7 +260,7 @@ class CreateCommand(Command):
                 "sudo",
                 "sed",
                 "-i",
-                r"'s/\(127\.0\.0\.1\s*\)localhost/\1" + f"{hostname}/'",
+                r"s/\(127\.0\.1\.1\s*\)raspberrypi/\1" + f"{hostname}/",
                 hostFile,
             ]
         )
@@ -272,7 +271,7 @@ class CreateCommand(Command):
     # -----
     def _setup_ssh(self, mountPoint):
         # https://tinyurl.com/2p8u54av
-        sshFile = os.path.join(mountPoint, "boot", "ssh")
+        sshFile = os.path.join(mountPoint, "ssh")
         process = sub.Popen(["sudo", "touch", sshFile])
         process.wait()
 
@@ -284,13 +283,14 @@ class CreateCommand(Command):
         attempts = 0
 
         while attempts < 3:
+            salt = crypt.mksalt(crypt.METHOD_SHA512)
             passwd = crypt.crypt(
                 self.secret("Enter a new root password: "),
-                salt=crypt.mksalt(crypt.METHOD_SHA512),
+                salt=salt,
             )
             passwd2 = crypt.crypt(
                 self.secret("Re-enter password: "),
-                salt=crypt.mksalt(crypt.METHOD_SHA512),
+                salt=salt,
             )
             if hmac.compare_digest(passwd, passwd2):
                 break
@@ -303,13 +303,12 @@ class CreateCommand(Command):
 
         shadowFile = os.path.join(mountPoint, "etc", "shadow")
 
-        process = sub.Popen(
-            [
-                "sudo",
-                "sed",
-                "-i",
-                r"'s/^pi:\*/pi:" + f"{passwd}/'",
-                shadowFile,
-            ]
-        )
+        # Handle special characters in the password hash. re.escape
+        # doesn't escape /, and that causes sed to complain if the
+        # hash a / in it
+        pwd = re.escape(passwd)
+        pwd = pwd.replace(r"/", r"\/")
+
+        cmd = rf"sudo sed -i s/^pi:\*/pi:{pwd}/ {shadowFile}"
+        process = sub.Popen(cmd.split())
         process.wait()
